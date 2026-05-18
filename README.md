@@ -14,7 +14,7 @@ Dieses Projekt dient als interaktive Lern- und Experimentierumgebung zur Erforsc
 ### Phase 1: Infrastruktur & Sandboxing
 Aufbau der isolierten Basisumgebung mittels Docker:
 * **Base-Image:** Ein Dockerfile, das grundlegende Build-Tools, Python und `uv` bereitstellt.
-* **Agent-Sandbox:** Ein dediziertes Dockerfile (basierend auf Ubuntu Server) für den KI-Agenten. Im Fokus steht ein striktes Security-Konzept zur Verhinderung von Container-Breakouts. Der Container erhält Zugriff auf essenzielle CLI-Tools (`cat`, `vim`, `curl`, `ping`, `ssh`).
+* **Agent-Sandbox:** Ein dediziertes Dockerfile (basierend auf Ubuntu Server) für den KI-Agenten. Im Fokus steht ein striktes Security-Konzept zur Verhinderung von Container-Breakouts. Der Container erhält Zugriff auf essenzielle CLI-Tools (`cat`, `vim`, `curl`, `ping`, `ssh`, `ls`, `pwd`, `cd`, `touch`, `mkdir`, `cp`, `mv`, `rm`, `grep`, `find`, `chmod`, `chown`, `sudo`, `systemctl`, `journalctl`, `ip`, `ss`, `rsync`, `tar`, `ps`, `kill`, `htop`, `df`, `du`, `pacman`, `docker`, `git`).
 * **Orchestrierung:** Eine `docker-compose.yml`, die das Zusammenspiel der Container steuert und die PostgreSQL-Datenbank (inkl. Vektor-Plugin) sowie pgAdmin hochfährt.
 
 ### Phase 2: API-Gateway & Lifecycle-Management
