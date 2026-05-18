@@ -1,40 +1,76 @@
-# own_openclaw
+# own_openclaw - Technical Architecture & Implementation Guide
 
-## Projektbeschreibung
-Dieses Projekt dient als interaktive Lern- und Experimentierumgebung zur Erforschung, Entwicklung und Orchestrierung autonomer KI-Agenten (Agentic Systems). Der Fokus liegt auf dem tiefgreifenden Verständnis der zugrundeliegenden Prozesse, der API-Kommunikation und der sicheren Ausführung isolierter KI-Workloads.
+## 1. Projektbeschreibung & Zielsetzung
+Dieses Projekt dient als interaktive Lern- und Experimentierumgebung zur Erforschung, Entwicklung und Orchestrierung autonomer KI-Agenten (Agentic Systems). Der Fokus liegt auf dem tiefgreifenden Verständnis der zugrundeliegenden Prozesse, API-Kommunikation, Tool-Use (Function Calling) und der sicheren Ausführung isolierter KI-Workloads.
 
-## Technologie-Stack
-* **Backend & API:** Python, FastAPI, uv (Package Manager)
-* **Infrastruktur:** Ubuntu Server, Docker, Docker Compose
-* **Datenbank:** PostgreSQL (inkl. pgvector Plugin), pgAdmin
-* **KI-Backend:** Ollama
+## 2. Technologie-Stack & Versionierung
+* **Backend API:** Python 3.12+, FastAPI, Uvicorn
+* **Package Management:** uv
+* **Infrastruktur & Orchestrierung:** Docker, Docker Compose, Docker SDK for Python (`docker` pip package)
+* **Datenbank:** PostgreSQL 16+ (inkl. `pgvector` Plugin), pgAdmin 4
+* **KI-Backend:** Ollama (lokal) mit Function-Calling-kompatiblen Modellen (z.B. Llama 3 oder Mistral)
+* **Frontend:** HTML/CSS/Vanilla JS (serviert über FastAPI als statische Dateien)
 
 ---
 
+## 3. Architektur & Phasen-Implementierung
+
 ### Phase 1: Infrastruktur & Sandboxing
-Aufbau der isolierten Basisumgebung mittels Docker:
-* **Base-Image:** Ein Dockerfile, das grundlegende Build-Tools, Python und `uv` bereitstellt.
-* **Agent-Sandbox:** Ein dediziertes Dockerfile (basierend auf Ubuntu Server) für den KI-Agenten. Im Fokus steht ein striktes Security-Konzept zur Verhinderung von Container-Breakouts. Der Container erhält Zugriff auf essenzielle CLI-Tools (`cat`, `vim`, `curl`, `ping`, `ssh`, `ls`, `pwd`, `cd`, `touch`, `mkdir`, `cp`, `mv`, `rm`, `grep`, `find`, `chmod`, `chown`, `sudo`, `systemctl`, `journalctl`, `ip`, `ss`, `rsync`, `tar`, `ps`, `kill`, `htop`, `df`, `du`, `pacman`, `docker`, `git`).
-* **Orchestrierung:** Eine `docker-compose.yml`, die das Zusammenspiel der Container steuert und die PostgreSQL-Datenbank (inkl. Vektor-Plugin) sowie pgAdmin hochfährt.
+
+**3.1. Verzeichnisstruktur & Docker-Setup:**
+* `docker-compose.yml`: Definiert drei Services: `gateway` (FastAPI), `postgres` (mit pgvector) und `pgadmin`. Der Agent-Container wird *nicht* hierüber permanent gestartet, sondern dynamisch vom Gateway gespawnt.
+* `Dockerfile.gateway`: Basiert auf `python:3.12-slim`, installiert `uv`, kopiert die `requirements.txt`/`pyproject.toml` und startet FastAPI.
+* `Dockerfile.agent`: Basiert auf `ubuntu:24.04`. 
+  * **Security Profile:** Der Container läuft im `--network none` (falls keine externe API gefordert ist) oder in einem isolierten Bridge-Network. Drop aller unnötigen Linux-Capabilities (`--cap-drop=ALL`). Run als Non-Root User.
+  * **Tooling:** Installation der erlaubten CLI-Tools: `cat`, `vim`, `curl`, `ping`, `ssh`, `ls`, `pwd`, `cd`, `touch`, `mkdir`, `cp`, `mv`, `rm`, `grep`, `find`, `chmod`, `chown`, `ip`, `ss`, `rsync`, `tar`, `ps`, `kill`, `htop`, `df`, `du`, `git`, `apt`.
+
+**3.2. Netzwerk & Volumes:**
+* `own_openclaw_net`: Dediziertes Docker-Netzwerk für die interne Kommunikation (Gateway <-> Postgres <-> pgAdmin).
+* `pg_data`: Persistentes Docker-Volume für PostgreSQL.
 
 ### Phase 2: API-Gateway & Lifecycle-Management
-Entwicklung des zentralen FastAPI-Gateways mit folgenden Kernfunktionen:
-* **Schnittstellen:** Verbindungsaufbau zum lokalen Ollama-Service und zur PostgreSQL-Datenbank.
-* **Command-Management:** Verwaltung einer Basis-Datei mit den zulässigen Befehlen für den Agent-Container.
-* **Lifecycle-Management:** Dynamisches Starten des Agent-Containers durch das Gateway und Implementierung eines automatischen Shutdowns nach 4 Minuten Inaktivität (Idle-Timeout).
-* **Ausführung:** Aufbau der Verbindung zum Agent-Container zur Befehlsausführung.
-* **Testing-Fokus:** * Erfolgreicher Container-Start via Gateway.
-  * Zuverlässiges Herunterfahren beim Idle-Timeout.
-  * Korrekte Weiterleitung, Ausführung und Rückmeldung von Befehlen aus dem Container (inkl. Timeout-Timer für die Antworten).
+
+**2.1. FastAPI Struktur (`/app`):**
+* `main.py`: Entrypoint, FastAPI App-Instanz.
+* `routes/chat.py`: Endpunkte für die Frontend-Kommunikation.
+* `services/docker_manager.py`: Nutzt das `docker` Python-Package zur Steuerung des Agent-Containers.
+* `services/ollama_client.py`: Handhabt HTTP-Requests an die Ollama API (`http://localhost:11434/api/chat`).
+
+**2.2. Lifecycle Management (Docker Manager):**
+* **Start:** Prüft via Docker API, ob der Container `agent_sandbox` läuft. Wenn nicht, wird er gestartet (`client.containers.run(..., detach=True)`).
+* **Execution:** Befehle werden über `container.exec_run("befehl")` ausgeführt. stdout/stderr und Exit-Codes werden zurückgegeben.
+* **Idle-Timeout:** Ein asynchroner Background-Task prüft den letzten Timestamp einer Befehlsausführung. Ist `datetime.now() - last_exec > 4 Minuten`, wird `container.stop()` getriggert.
+
+**2.3. Befehls-Registry:**
+* Eine `tools.json` oder Python-Dict, welches die verfügbaren Befehle (z. B. `run_bash_command`) als JSON-Schema definiert. Dieses Schema wird im Ollama-Request als `tools`-Parameter mitgegeben.
 
 ### Phase 3: Frontend & Message Routing
-Entwicklung eines minimalistischen Web-Interfaces zur Interaktion:
-* **UI-Aufbau:** Ein geteiltes Interface zur Spezifikation des Providers und ein separates Chat-Fenster für die Kommunikation mit dem Agenten.
-* **Routing-Logik:** Der User sendet Nachrichten an das Gateway, welches diese an Ollama weiterleitet. 
-* **Function Calling:** Das Gateway verarbeitet die Ollama-Response. Handelt es sich um einen Function Call, führt das Gateway den entsprechenden Befehl im Agent-Container aus, sendet das Resultat zurück an Ollama und leitet die finale Antwort an die Web-UI. Ist kein Function Call nötig, wird die Antwort direkt an die UI durchgereicht.
+
+**3.1. UI Design (Minimalist):**
+* Zwei-Spalten-Layout (HTML/CSS/Vanilla JS).
+* Links: Einstellungs-Panel (Provider URL, Model-Auswahl, System-Prompt).
+* Rechts: Chat-Interface (Scrollable Message-History, Input-Feld).
+
+**3.2. Routing & Function Calling Logik (Backend):**
+1. User sendet Text an `POST /api/chat`.
+2. Gateway ruft Ollama API auf, injiziert Chat-Historie und `tools`.
+3. Ollama antwortet:
+   * **Szenario A (Text-Antwort):** Gateway speichert in DB und leitet den Text ans Frontend.
+   * **Szenario B (Tool Call):** Ollama gibt JSON mit Tool-Name und Parametern zurück (z.B. `{"name": "run_bash", "arguments": {"cmd": "ls -la"}}`).
+4. Gateway fängt Tool Call ab, ruft `docker_manager.py` auf, führt den Befehl in der Sandbox aus.
+5. Gateway sendet das Resultat (stdout) sofort als neue "Tool"-Nachricht an Ollama zurück.
+6. Ollama generiert finale Antwort -> Weiterleitung an Frontend.
 
 ### Phase 4: Langzeitgedächtnis & Personalisierung (RAG)
-Erweiterung des Agenten um die Fähigkeit zur Individualisierung durch Zugriff auf vergangene Konversationen:
-* **Persistenz:** Anlage einer Datenbanktabelle zur dauerhaften Speicherung aller Chatnachrichten.
-* **Suchfunktionen:** Implementierung von Vektorsuche (Vector Search) und Volltextsuche (Full Text Search) auf dem Chatverlauf.
-* **Autonomie:** Erweiterung der Standard-Befehlsdatei des Agenten um spezifische Suchbefehle, sodass der Agent selbstständig in seiner eigenen Historie nach Kontext suchen kann.
+
+**4.1. Datenbank-Schema (PostgreSQL):**
+* Tabelle `sessions`: `id` (UUID), `created_at`.
+* Tabelle `messages`: `id` (UUID), `session_id` (FK), `role` (user/assistant/tool), `content` (Text), `embedding` (vector(768) oder entsprechendes Modellmaß), `timestamp`.
+
+**4.2. Embedding & Suche:**
+* Vor dem Speichern generiert das Gateway via Ollama (`/api/embeddings`) einen Vektor der Nachricht.
+* **Vector Search:** SQL-Query mit Cosine Similarity (`ORDER BY embedding <=> query_embedding LIMIT 5`).
+* **Full Text Search:** PostgreSQL `tsvector` und `tsquery` auf der `content`-Spalte.
+
+**4.3. Agent-Autonomie (Self-RAG):**
+* Die Tools `search_memory_semantic(query)` und `search_memory_exact(keyword)` werden den Agent-Tools hinzugefügt, sodass er selbstständig in seiner Historie suchen kann.
