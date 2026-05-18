@@ -1,0 +1,29 @@
+FROM ubuntu:24.04
+
+# Avoid tzdata interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update and install required packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    vim \
+    iputils-ping \
+    openssh-client \
+    htop \
+    git \
+    rsync \
+    iproute2 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user
+RUN useradd -m -s /bin/bash agent
+
+# Set the working directory
+WORKDIR /home/agent
+
+# Switch to the non-root user
+USER agent
+
+# Keep the container running (as it will be spawned dynamically)
+CMD ["tail", "-f", "/dev/null"]
