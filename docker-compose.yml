@@ -1,0 +1,50 @@
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: gateway
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app
+      - /var/run/docker.sock:/var/run/docker.sock # Need this for docker SDK to spawn agent
+    networks:
+      - own_openclaw_net
+    depends_on:
+      - postgres
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: openclaw
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - own_openclaw_net
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    ports:
+      - "5050:80"
+    networks:
+      - own_openclaw_net
+    depends_on:
+      - postgres
+
+networks:
+  own_openclaw_net:
+    driver: bridge
+
+volumes:
+  pg_data:
